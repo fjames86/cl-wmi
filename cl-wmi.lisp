@@ -96,7 +96,7 @@
   "Like MAPCAR but for collections"
   (apply #'mapcar 
 	 function 
-	 (apply #'collection-list collection more-collections)))
+	 (mapcar #'collection-list (cons collection more-collections))))
 
 (defun object-properties (management-object)			  
   "Extract the properties of the collection as an assoc list"
