@@ -163,7 +163,7 @@
   (mapcar (lambda (property)
 	    (destructuring-bind (name . value) property
 	      (cons name
-		    (if (eq (type-of value) 'rdnzl::container)
+		    (if (container-p value)
 			(if [%IsArray [GetType value]]
 			    (mapcar #'unbox-object (rdnzl-array-to-list value))
 			    (unbox-object value))
