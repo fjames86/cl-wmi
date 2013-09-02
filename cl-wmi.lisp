@@ -7,7 +7,9 @@
 
 	   #:collection-list
 	   #:object-properties
-	   #:collection-properties	   
+	   #:collection-properties
+	   #:object-methods
+
 	   #:foreach
 	   #:mapcoll
 	   #:get-type-name
@@ -15,7 +17,10 @@
 	   #:unbox-from-type-name
 
 	   #:unbox-object
-	   #:unbox-collection))
+	   #:unbox-collection
+	   #:invoke-method
+	   #:invoke-class-method
+	   #:make-management-class))
 
 (in-package #:cl-wmi)
 
@@ -23,7 +28,8 @@
 
 (import-types "System.Management"
 	      "ConnectionOptions" "ObjectQuery" "ManagementObjectSearcher" "ManagementScope" 
-	      "ManagementObject" "ManagementBaseObject" "ManagementBaseObject[]")
+	      "ManagementObject" "ManagementBaseObject" "ManagementClass"
+	      "ObjectGetOptions" "ManagementPath")
 
 (use-namespace "System")
 (use-namespace "System.Management")
@@ -53,7 +59,7 @@
   "Execute the WMI query on the local machine with current user privalidegs"
   (let ((searcher 
 	 (if namespace
-	     (new "ManagementObjectSearcher" (new "ManagementScope" namespace) querystr)
+	     (new "ManagementObjectSearcher" namespace querystr)
 	     (new "ManagementObjectSearcher" querystr))))
     [Get searcher]))
 
@@ -99,7 +105,7 @@
 	 (mapcar #'collection-list (cons collection more-collections))))
 
 (defun object-properties (management-object)			  
-  "Extract the properties of the collection as an assoc list"
+  "Extract the properties of the ManagementObject as an assoc list"
   (mapcar (lambda (property)
 	    (let ((val [%Value property]))
 	      (cons (intern [%Name property] "KEYWORD")
@@ -109,6 +115,12 @@
 (defun collection-properties (collection)
   "Extract the properties of each of the objects in the collection"
   (mapcar #'object-properties (collection-list collection)))
+
+(defun object-methods (management-object)
+  "Extract the methods of the ManagementObject"
+  (let ((object-class (new "ManagementClass" [%ClassPath management-object])))
+    [%Methods object-class]))
+
 
 ;; ------------------------------------------------------------------------
 
@@ -160,17 +172,68 @@
 
 (defun unbox-object (management-object)
   "An attempt to unbox all properties of the object, calling itself recursively if required"
-  (mapcar (lambda (property)
-	    (destructuring-bind (name . value) property
-	      (cons name
-		    (if (container-p value)
-			(if [%IsArray [GetType value]]
-			    (mapcar #'unbox-object (rdnzl-array-to-list value))
-			    (unbox-object value))
+  (if (container-p management-object)
+      (mapcar (lambda (property)
+		(destructuring-bind (name . value) property
+		  (cons name
+			(if (container-p value)
+			    (if [%IsArray [GetType value]]
+				(mapcar #'unbox-object (rdnzl-array-to-list value))
+				(unbox-object value))
 			value))))
-	  (object-properties management-object)))
+	      (object-properties management-object))
+      management-object))
 
 (defun unbox-collection (collection)
   "Unbox each object in the collection"
   (mapcar #'unbox-object (collection-list collection)))
+
+
+;;; ---------------------------
+
+
+(defun invoke-method (management-object method-name &rest args)
+  "Invoke the named method on the managementobject with the specified arguments"
+  (invoke management-object
+	  "InvokeMethod"
+	  method-name
+	  (list-to-rdnzl-array args)))
+
+(defun invoke-class-method (class-name method-name &rest args)
+  "Invoke the method of the named ManagementClass"
+  (apply #'invoke-method 
+	 (new "ManagementClass" class-name)
+	 method-name
+	 args))
+
+(defun make-management-class (class-name &key host (namespace "root\\wmi") username password domain)
+  "Create a management class, possibly on a remote machine"
+  (let ((scopepath (if host
+		       (format nil "\\\\~A\\~A" host namespace)
+		       namespace))
+	(options (new "ConnectionOptions")))
+    (if username
+	(setf [%Username options] username))
+    (if password
+	(setf [%Password options] password))
+    (if domain
+	(setf [%Username options] (format nil "~A\\~A" domain (if username username "."))))
+
+    (let ((scope (new "ManagementScope" scopepath options))
+	  (getoptions (new "ObjectGetOptions"))
+	  (path (new "ManagementPath" class-name)))
+;      [Connect scope]
+      (new "ManagementClass" scope path getoptions))))
+
+
+
+
+
+
+		     
+      
+
+
+
+
 

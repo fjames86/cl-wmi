@@ -57,3 +57,40 @@ are either arrays or other ManagementObjects
 * unbox-collection
 This just applies unbox-object to each object in the collection
 
+
+
+Examples 
+-----------
+
+Typically you will do something like:
+
+(unbox-collection (wmi-query "Select * From MSFT_Disk" :host "remote-host" :namespace "root\\microsoft\\windows\\storage" :username "administrator" :password "password"))
+
+This will walk through the WMI class that gets returned and extract the properties, returning them as an assoc list.
+
+If you want to call methods of the WMI class then there's two things you might be doing. Either invoking a method explicitly 
+of a ManagementObject, which is done with invoke-method, or calling a method of a WMI class itself. This is done either 
+simply with invoke-class-method, or alternatively can be done with invoke-method on a management-class object. These 
+can be made using make-management-class, which offers the possibilitity of creating classes on remote machines.
+
+
+Here we start up notepad, see it running, and then terminate it. All on a remote machine:
+
+
+;; make a management class object 
+(defparameter mgtcls (make-management-class "Win32_Process" :namespace "root\\cimv2" :host "remotehost" :username "administrator" :password "password"))
+
+;; invoke the create method to start an instance of notepad.exe
+(invoke-method mgtcls "Create" "notepad.exe")
+
+;; query to get a list of notepad instances running
+(defparameter processes (collection-list (wmi-query "select * from Win32_Process where name = 'notepad.exe'" :namespace "root\\cimv2" :host "remotehost" :username "administrator" :password "password")))
+
+;; take a look at the info contained in them, e.g. the processs id
+(mapcar #'unbox-object processes)
+
+;; terminate the first notepad instance, probably the one we want. 
+(invoke-method (car processes) "Terminate" 0)
+
+
+
