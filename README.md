@@ -58,6 +58,11 @@ are either arrays or other ManagementObjects
 This just applies unbox-object to each object in the collection
 
 
+Registry queries
+------------------
+
+You can access the registry using WMI queries. The functions registry-query, registry-values and registry-subkeys 
+provide get-access to the registry via WMI.
 
 Examples 
 -----------
