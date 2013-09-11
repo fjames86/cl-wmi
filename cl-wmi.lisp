@@ -38,7 +38,7 @@
 	      "ConnectionOptions" "ObjectQuery" "ManagementObjectSearcher" "ManagementScope" 
 	      "ManagementObject" "ManagementBaseObject" "ManagementBaseObject[]"
 	      "ManagementClass" "ObjectGetOptions" "ManagementPath"
-	      "AuthenticationLevel" "ImpersonationLevel")
+	      "AuthenticationLevel" "ImpersonationLevel" "InvokeMethodOptions")
 
 (use-namespace "System")
 (use-namespace "System.Management")
@@ -157,63 +157,22 @@
 
 ;; ------------------------------------------------------------------------
 
-;; possibly unneeded now .....
-(defun cimtype-name (cim-enum)
-  "Convert a CIM type enum into a string name"
-  (case cim-enum
-    (0 "None")
-    (2 "SInt16")
-    (3 "SInt32")
-    (4 "Real32")
-    (5 "Real64")
-    (8 "String")
-    (11 "Boolean")
-    (13 "Object")
-    (16 "SInt8")
-    (17 "UInt8")
-    (18 "UInt16")
-    (19 "UInt32")
-    (20 "SInt64")
-    (21 "UInt64")
-    (101 "DateTime")
-    (102 "Reference")
-    (103 "Char16")))
-
-(defun unbox-from-cimtype-name (container type-name)
-  "Like UNBOX-FROM-TYPE-NAME but uses the CIM type name"
-  (let (cast-type)
-    (cond
-      ((member type-name '("String" "DateTime") :test #'string=)
-       (setf cast-type "System.String"))
-      ((string= type-name "Boolean")
-       (setf cast-type "System.Boolean"))
-      ((string= type-name "Char16")
-       (setf cast-type "System.Char"))
-      ((member type-name '("SInt8" "SInt16" "SInt32" "SInt64" 
-			   "UInt8" "UInt16" "UInt32" "UInt64") 
-	       :test #'string=)
-       (setf cast-type "System.Int64")))
-    (if (and container cast-type)
-	(progn
-	  (cast container cast-type)
-	  (unbox container))
-	container)))
-
-
-;; ------------------------------------------------------------------------
-
-
 (defun unbox-object (management-object)
   "An attempt to unbox all properties of the object, calling itself recursively if required"
   (if (container-p management-object)
       (mapcar (lambda (property)
 		(destructuring-bind (name . value) property
 		  (cons name
-			(if (container-p value)
-			    (if [%IsArray [GetType value]]
-				(mapcar #'unbox-object (rdnzl-array-to-list value))
-				(unbox-object value))
-			value))))
+			;; if the value is a container then it's a managementobject (or array of management objects)
+			;; object-properties already unboxes basic types
+			(cond
+			  ((container-p value)
+			   (if [%IsArray [GetType value]]
+			       (mapcar #'unbox-object (rdnzl-array-to-list value))
+			       (unbox-object value)))
+			  ((listp value)
+			   (mapcar #'unbox-object value))
+			  (t value)))))
 	      (object-properties management-object))
       management-object))
 
@@ -276,15 +235,15 @@
 
 ;; definitions for HKEY_LOCAL_MACHINE, these are normally given in hex,
 ;; 80000001, 80000002 etc.
-(defconstant +hkey-trees+ '((:classes-root . 2147483648) (:current-user . 2147483649) 
+(defparameter *hkey-trees* '((:classes-root . 2147483648) (:current-user . 2147483649) 
 			    (:local-machine . 2147483650) (:users . 2147483651) (:current-config . 2147483653)))
 
 ;; the names of the "getter" methods
-(defconstant +get-methods+ '((:string . "GetStringValue") (:binary . "GetBinaryValue") (:dword . "GetDWORDValue")
+(defparameter *get-methods* '((:string . "GetStringValue") (:binary . "GetBinaryValue") (:dword . "GetDWORDValue")
 			     (:expanded-string . "GetExpandedStringValue") (:multi-string . "GetMultiStringValue")))
 
 ;; the names of the "setter" methods
-(defconstant +set-methods+ '((:string . "SetStringValue") (:binary . "SetBinaryValue") (:dword . "SetDWORDValue")
+(defparameter *set-methods* '((:string . "SetStringValue") (:binary . "SetBinaryValue") (:dword . "SetDWORDValue")
 			     (:expanded-string . "SetExpandedStringValue") (:multi-string . "SetMultiStringValue")))
 
 
@@ -317,7 +276,7 @@
 				     inparams (make-null-object "System.Management.InvokeMethodOptions"))))
       (values 
        (mapcar (lambda (name type)
-		 (list name 
+		 (list (intern name "KEYWORD")
 		       (case type
 			 (1 :string)
 			 (2 :expanded-string)
@@ -357,7 +316,7 @@
     (when (zerop err-code)
       (mapcar (lambda (valpair)
 		(destructuring-bind (value-name type) valpair
-		  (let ((meth-name (cdr (assoc type +get-methods+))))
+		  (let ((meth-name (cdr (assoc type *get-methods*))))
 		    (let* ((mc (make-management-class "StdRegProv" 
 						      :host host
 						      :namespace "root\\cimv2"
@@ -368,14 +327,14 @@
 			   (inparams [GetMethodParameters mc meth-name]))
 
 		      (if tree
-			  [SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+			  [SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
 		      [SetPropertyValue inparams "sSubKeyName" key-name]
-		      [SetPropertyValue inparams "sValueName" value-name]
+		      [SetPropertyValue inparams "sValueName" (symbol-name value-name)]
 		      
 		      (let* ((outparams (invoke-method mc meth-name
 						       inparams 
 						       (make-null-object "System.Management.InvokeMethodOptions"))))
-			(values (cons value-name 
+			(values (cons value-name
 				      (unbox-from-type-name 				 
 				       [GetPropertyValue outparams
 				       ;; Microsoft uses hungarian notation so we need different names depending on the type
@@ -387,7 +346,7 @@
 
 (defun set-registry-value (key-name value-name value type &key tree host username password domain (wow64 t))
   "Sets the value on the remote machine. Type should be :string, :dword etc"
-  (let* ((meth-name (cdr (assoc type +set-methods+)))
+  (let* ((meth-name (cdr (assoc type *set-methods*)))
 	 (mc (make-management-class "StdRegProv" 
 				    :host host
 				    :namespace "root\\cimv2"
@@ -398,7 +357,7 @@
 	 (inparams [GetMethodParameters mc meth-name]))
 
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
     [SetPropertyValue inparams "sValueName" value-name]
     [SetPropertyValue inparams 
@@ -444,7 +403,7 @@
 	 (inparams [GetMethodParameters mc "CreateKey"]))
 
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
 
     (let ((outparams (invoke-method mc "CreateKey"
@@ -463,7 +422,7 @@
 	 (inparams [GetMethodParameters mc "DeleteKey"]))
 
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
 
     (let ((outparams (invoke-method mc "DeleteKey"
