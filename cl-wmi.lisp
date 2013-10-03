@@ -269,7 +269,7 @@
 
     ;; the tree is HKEY_LOCAL_MACHINE by default
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
 
     (let* ((outparams (invoke-method mc "EnumValues" 
