@@ -159,22 +159,23 @@
 
 (defun unbox-object (management-object)
   "An attempt to unbox all properties of the object, calling itself recursively if required"
-  (if (container-p management-object)
-      (mapcar (lambda (property)
-		(destructuring-bind (name . value) property
-		  (cons name
-			;; if the value is a container then it's a managementobject (or array of management objects)
-			;; object-properties already unboxes basic types
-			(cond
-			  ((container-p value)
-			   (if [%IsArray [GetType value]]
-			       (mapcar #'unbox-object (rdnzl-array-to-list value))
-			       (unbox-object value)))
-			  ((listp value)
-			   (mapcar #'unbox-object value))
-			  (t value)))))
-	      (object-properties management-object))
-      management-object))
+    (if (container-p management-object)
+	(let ((management-object (unbox management-object)))
+	  (mapcar (lambda (property)
+		    (destructuring-bind (name . value) property
+		      (cons name
+			    ;; if the value is a container then it's a managementobject (or array of management objects)
+			    ;; object-properties already unboxes basic types
+			    (cond
+			      ((container-p value)
+			       (if [%IsArray [GetType value]]
+				   (mapcar #'unbox-object (rdnzl-array-to-list value))
+				   (unbox-object value)))
+			      ((consp value)
+			       (mapcar #'unbox-object value))
+			      (t value)))))
+		  (object-properties management-object)))
+	management-object))
 
 (defun unbox-collection (collection)
   "Unbox each object in the collection"
