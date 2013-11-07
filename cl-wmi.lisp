@@ -6,6 +6,7 @@
 	   #:local-wmi-query
 
 	   #:collection-list
+	   #:object-property
 	   #:object-properties
 	   #:collection-properties
 	   #:object-methods
@@ -85,6 +86,14 @@
 	     (new "ManagementObjectSearcher" querystr))))
     [Get searcher]))
 
+(defun wmi-query* (querystr &key host (namespace "root\\wmi") username password domain)
+  (unbox-collection (wmi-query querystr 
+			       :host host
+			       :namespace namespace
+			       :username username
+			       :password password
+			       :domain domain)))
+
 ;;; ------------ various utilities follow ------------------------------
 
 (defun get-type-name (container)  
@@ -114,7 +123,7 @@
       container))
     
 (defun object-property (obj name)
-  (unbox-from-type-name [GetProperty obj name]))
+  (unbox-from-type-name [GetPropertyValue obj name]))
 
 (defmacro foreach ((var collection) &body body)
   "Iterate over the collection using .NET iterators"
@@ -161,23 +170,23 @@
 
 (defun unbox-object (management-object)
   "An attempt to unbox all properties of the object, calling itself recursively if required"
+  (let ((management-object (unbox-from-type-name management-object)))
     (if (container-p management-object)
-	(let ((management-object (unbox management-object)))
-	  (mapcar (lambda (property)
-		    (destructuring-bind (name . value) property
-		      (cons name
-			    ;; if the value is a container then it's a managementobject (or array of management objects)
-			    ;; object-properties already unboxes basic types
-			    (cond
-			      ((container-p value)
-			       (if [%IsArray [GetType value]]
-				   (mapcar #'unbox-object (rdnzl-array-to-list value))
-				   (unbox-object value)))
-			      ((consp value)
-			       (mapcar #'unbox-object value))
-			      (t value)))))
-		  (object-properties management-object)))
-	management-object))
+	(mapcar (lambda (property)
+		  (destructuring-bind (name . value) property
+		    (cons name
+			  ;; if the value is a container then it's a managementobject (or array of management objects)
+			  ;; object-properties already unboxes basic types
+			  (cond
+			    ((container-p value)
+			     (if [%IsArray [GetType value]]
+				 (mapcar #'unbox-object (rdnzl-array-to-list value))
+				 (unbox-object value)))
+			    ((consp value)
+			     (mapcar #'unbox-object value))
+			    (t value)))))
+		(object-properties management-object))
+	management-object)))
 
 (defun unbox-collection (collection)
   "Unbox each object in the collection"
@@ -232,6 +241,16 @@
       [Connect scope]
       (new "ManagementClass" scope path getoptions))))
 
+(defun enumerate-classnames (namespace &key host username password domain)
+  (let ((coll (wmi-query "Select * From Meta_Class"
+			 :host host
+			 :username username
+			 :password password
+			 :domain domain
+			 :namespace namespace)))
+    (mapcoll (lambda (obj)
+	       (unbox-from-type-name (object-property obj "__CLASS")))
+	     coll)))
 
 ;;;; --------------- registry queries -----------------------------------------
 
