@@ -3,7 +3,9 @@
 (defpackage #:cl-wmi
   (:use #:cl #:rdnzl)
   (:export #:wmi-query
+	   #:wmi-query*
 	   #:local-wmi-query
+	   #:enumerate-classnames 
 
 	   #:collection-list
 	   #:object-property
