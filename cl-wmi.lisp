@@ -2,6 +2,7 @@
 
 (defpackage #:cl-wmi
   (:use #:cl #:rdnzl)
+  (:nicknames #:wmi)
   (:export #:wmi-query
 	   #:local-wmi-query
 
@@ -114,6 +115,9 @@
 	   (unbox (cast-from-type-name container)))))
       container))
     
+(defun object-property (obj name)
+  (unbox-from-type-name [GetProperty obj name]))
+
 (defmacro foreach ((var collection) &body body)
   "Iterate over the collection using .NET iterators"
   (let ((genum (gensym "ENUMERATOR"))
@@ -301,7 +305,7 @@
 	 (inparams [GetMethodParameters mc "EnumKey"]))
 
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
 
     (let* ((outparams (invoke-method mc "EnumKey" 
@@ -384,7 +388,7 @@
 	 (inparams [GetMethodParameters mc "DeleteValue"]))
 
     (if tree
-	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree +hkey-trees+))) "System.UInt32")])
+	[SetPropertyValue inparams "hDefKey" (cast (box (cdr (assoc tree *hkey-trees*))) "System.UInt32")])
     [SetPropertyValue inparams "sSubKeyName" key-name]
     [SetPropertyValue inparams "sValueName" value-name]
 
