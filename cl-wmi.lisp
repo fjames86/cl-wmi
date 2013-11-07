@@ -2,7 +2,6 @@
 
 (defpackage #:cl-wmi
   (:use #:cl #:rdnzl)
-  (:nicknames #:wmi)
   (:export #:wmi-query
 	   #:local-wmi-query
 
@@ -41,7 +40,6 @@
 	      "ManagementClass" "ObjectGetOptions" "ManagementPath"
 	      "AuthenticationLevel" "ImpersonationLevel" "InvokeMethodOptions")
 
-(use-namespace "System")
 (use-namespace "System.Management")
 
 ;;; ----------- WMI queries ------------------------------------------
